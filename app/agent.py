@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+from app.guardrails import authorize_tool, boundary_response, safe_assistant_text
 from app.llm import GeminiProvider, LLMProvider, ModelTurn
 from app.prompts import build_system_prompt
 from app.state import ConversationState
@@ -37,6 +38,12 @@ class SchedulingAgent:
 
     def send(self, user_text: str) -> str:
         self.state.record_user(user_text)
+
+        blocked = boundary_response(user_text)
+        if blocked:
+            self.state.record_assistant(blocked)
+            return blocked
+
         turn = self._first_or_continued_user_turn(user_text)
 
         for _ in range(self.max_tool_rounds):
@@ -45,13 +52,16 @@ class SchedulingAgent:
             self.state.last_interaction_id = turn.interaction_id
 
             if not turn.tool_requests:
-                text = turn.text.strip()
+                text = safe_assistant_text(turn.text.strip(), self.state)
                 self.state.record_assistant(text)
                 return text
 
             tool_results = []
             for request in turn.tool_requests:
-                result = call_tool(
+                allowed, blocked_result = authorize_tool(
+                    self.state, request.name, request.arguments
+                )
+                result = blocked_result if not allowed else call_tool(
                     self.store,
                     self.state.patient_id,
                     request.name,
