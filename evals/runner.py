@@ -8,11 +8,27 @@ from app.tools import ClinicStore
 from evals.evaluator import evaluate_scenario
 
 
+def load_scenarios(path: str = "evals/scenarios.json") -> list[dict]:
+    return json.loads(Path(path).read_text())
+
+
+def apply_setup(store: ClinicStore, patient_id: str, setup: list[dict]) -> None:
+    for step in setup:
+        action = step.get("action")
+        if action == "book":
+            result = store.book_appointment(patient_id, step["slot_id"])
+            if not result.get("ok"):
+                raise RuntimeError(f"Scenario setup failed: {step} -> {result}")
+        else:
+            raise ValueError(f"Unsupported scenario setup action: {action}")
+
+
 def run_suite() -> list[dict]:
-    scenarios = json.loads(Path("evals/scenarios.json").read_text())
+    scenarios = load_scenarios()
     results = []
     for scenario in scenarios:
         store = ClinicStore()
+        apply_setup(store, scenario["patient_id"], scenario.get("setup", []))
         agent = SchedulingAgent(patient_id=scenario["patient_id"], store=store)
         for turn in scenario["turns"]:
             agent.send(turn)
