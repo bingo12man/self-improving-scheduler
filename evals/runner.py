@@ -5,7 +5,7 @@ from pathlib import Path
 
 from app.agent import SchedulingAgent
 from app.tools import ClinicStore
-from evals.evaluator import evaluate_scenario
+from evals.evaluator import evaluate_scenario, suite_summary
 
 
 def load_scenarios(path: str = "evals/scenarios.json") -> list[dict]:
@@ -37,6 +37,4 @@ def run_suite() -> list[dict]:
 
 
 def score(results: list[dict]) -> float:
-    if not results:
-        return 0.0
-    return 100.0 * sum(r["passed"] for r in results) / len(results)
+    return suite_summary(results)["score"]
