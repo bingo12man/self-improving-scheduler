@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 
-from evals.evaluator import compare_runs, suite_summary
-from evals.improve import apply_reinforcements, generate_reinforcements
+from evals.evaluator import suite_summary
+from evals.improve import close_improvement_loop
 from evals.runner import run_suite
 
 
@@ -21,33 +21,28 @@ def print_results(title, results):
         f"Pass rate: {summary['passed']}/{summary['total']} ({summary['pass_rate']:.1f}%) | "
         f"Critical failures: {summary['critical_failures']}"
     )
-    print("Category scores:")
-    for category, value in summary["category_scores"].items():
-        print(f"  {category:<26} {value:>5.1f}%")
 
 
 def main():
     load_dotenv()
 
-    before = run_suite()
-    print_results("BASELINE", before)
+    outcome = close_improvement_loop(run_suite)
+    print_results("BASELINE", outcome["before"])
 
-    additions = generate_reinforcements(before)
-    if not additions:
-        print("\nNo failed scenarios produced a supported new reinforcement. Nothing to apply.")
+    if not outcome["additions"]:
+        print("\nNo allow-listed failure produced a candidate reinforcement.")
         return
 
-    print("\nGenerated reinforcements:")
-    for item in additions:
-        print(f"- [{item['failure_type']}] {item['rule']}")
+    print("\nCandidate reinforcements:")
+    for item in outcome["additions"]:
+        print(
+            f"- [{item['failure_type']}] {item['rule']}\n"
+            f"  evidence: scenario={item['source_scenario']} code={item['failure_code']}"
+        )
 
-    added = apply_reinforcements(additions)
-    print(f"\nApplied {added} new reinforcement(s). Re-running the identical suite...")
+    print_results("CANDIDATE RE-RUN", outcome["after"])
 
-    after = run_suite()
-    print_results("AFTER IMPROVEMENT", after)
-
-    comparison = compare_runs(before, after)
+    comparison = outcome["comparison"]
     print(
         f"\nScore movement: {comparison['before']['score']:.1f}% -> "
         f"{comparison['after']['score']:.1f}% ({comparison['score_delta']:+.1f})"
@@ -56,9 +51,18 @@ def main():
         f"Pass-rate movement: {comparison['before']['pass_rate']:.1f}% -> "
         f"{comparison['after']['pass_rate']:.1f}% ({comparison['pass_rate_delta']:+.1f})"
     )
+    print(f"Improvements: {len(comparison['improvements'])}")
+    for item in comparison["improvements"]:
+        print(f"  + {item['scenario_id']}: {item['before']:.1f}% -> {item['after']:.1f}%")
+
     print(f"Regressions: {len(comparison['regressions'])}")
     for item in comparison["regressions"]:
         print(f"  - {item['scenario_id']}: {item['before']:.1f}% -> {item['after']:.1f}%")
+
+    if outcome["promoted"]:
+        print("\nPROMOTED: reinforcement kept because it improved the suite with zero regressions.")
+    else:
+        print(f"\nROLLED BACK: {outcome['reason']}. Reinforcement file restored.")
 
 
 if __name__ == "__main__":
