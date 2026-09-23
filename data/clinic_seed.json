@@ -1,0 +1,15 @@
+{
+  "doctors": [
+    {"id": "doc_derm_1", "name": "Dr. Maya Rao", "specialty": "dermatology"},
+    {"id": "doc_card_1", "name": "Dr. Arjun Mehta", "specialty": "cardiology"},
+    {"id": "doc_gp_1", "name": "Dr. Neha Shah", "specialty": "general medicine"}
+  ],
+  "slots": [
+    {"slot_id": "slot_d1", "doctor_id": "doc_derm_1", "date": "2026-09-25", "time": "13:00", "available": true},
+    {"slot_id": "slot_d2", "doctor_id": "doc_derm_1", "date": "2026-09-25", "time": "14:30", "available": true},
+    {"slot_id": "slot_d3", "doctor_id": "doc_derm_1", "date": "2026-09-25", "time": "16:00", "available": true},
+    {"slot_id": "slot_c1", "doctor_id": "doc_card_1", "date": "2026-09-26", "time": "10:00", "available": true},
+    {"slot_id": "slot_g1", "doctor_id": "doc_gp_1", "date": "2026-09-24", "time": "09:30", "available": true}
+  ],
+  "appointments": []
+}
