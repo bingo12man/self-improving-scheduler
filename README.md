@@ -1,57 +1,109 @@
 # Self-Improving Patient Appointment Agent
 
-A deliberately small agent demonstrating multi-turn scheduling, tool use, safety boundaries, evaluation against hard cases, and a closed failure -> reinforcement -> re-run loop.
+A compact take-home project for a clinic scheduling agent that can hold a real multi-turn conversation, call scheduling tools, evaluate its own runs, convert supported failures into structured reinforcements, and keep an improvement only when the same scenario suite gets better without regressions.
 
-## Model provider
+## Reviewer quick start
 
-The agent uses a small provider abstraction so the scheduling logic is not coupled to one vendor. The default adapter uses Google's Gemini Interactions API and `gemini-2.5-flash-lite` so the assignment can be developed on Gemini's free tier. Change `GEMINI_MODEL` if your AI Studio project exposes a different free-tier model.
-
-## Setup
+### 1) Setup
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env
-# add GEMINI_API_KEY from Google AI Studio
 ```
 
-`.env`:
+Add a Gemini API key to `.env`:
 
 ```text
 GEMINI_API_KEY=your_key_here
 GEMINI_MODEL=gemini-2.5-flash-lite
 ```
 
-## Run the agent
+The model is configurable through `GEMINI_MODEL`; the agent logic itself is provider-agnostic.
+
+### 2) Run the agent
 
 ```bash
 python run_agent.py
 ```
 
-Try:
+Example:
 
 ```text
-I need a dermatologist on September 25, 2026.
-The last one works. Book it.
+Patient: I need a dermatologist on September 25, 2026.
+Patient: The last one works. Book it.
 ```
 
-## Run the evaluation + improvement loop
-
-Start from a clean reinforcement file if you want to reproduce the before/after demo:
+### 3) Run the evaluation + improvement loop
 
 ```bash
-echo '[]' > data/reinforcements.json
 python run_eval.py
 ```
 
-The harness:
-1. runs the same scenario suite against the baseline prompt,
-2. checks transcript, tool calls, and database state,
-3. turns supported failure types into structured reinforcement rules,
-4. applies those rules,
-5. re-runs the identical scenarios,
-6. reports score movement and regressions.
+That one command:
+
+1. runs the baseline scenario suite,
+2. scores transcript, tool calls, safety invariants, and hidden clinic state,
+3. turns allow-listed failures into structured reinforcement candidates,
+4. applies the candidate rule,
+5. re-runs the exact same scenarios,
+6. detects improvements and regressions,
+7. promotes the rule only if measured performance improves with zero regressions,
+8. otherwise restores the previous reinforcement state,
+9. writes the full machine-readable evidence to `reports/latest_eval.json`.
+
+To reproduce a clean baseline, set `data/reinforcements.json` back to:
+
+```json
+[]
+```
+
+## Why this is not just a tool-calling demo
+
+The agent has explicit boundaries around clinic mutations:
+
+- availability must come from the clinic tool,
+- booking/rescheduling is restricted to verified slots,
+- cancellation requires explicit confirmation,
+- medical diagnosis/prescription requests stay out of scope,
+- common prompt-injection attempts are blocked,
+- a failed mutation cannot be described as successful.
+
+The evaluator also inspects hidden state. A transcript that says “booked” still fails if the appointment database does not contain the expected booking.
+
+## Evaluation suite
+
+The repository currently includes 12 scenarios covering:
+
+- happy-path booking,
+- ordinal/reference resolution,
+- unavailable dates,
+- unsupported specialties,
+- fabricated slot attempts,
+- appointment lookup,
+- cancellation with confirmation,
+- cancellation without confirmation,
+- rescheduling,
+- ambiguous requests,
+- medical-scope boundaries,
+- prompt injection.
+
+Each scenario receives a binary verdict and a weighted 0–100 score. The suite reports overall score, pass rate, category performance, critical failures, improvements, and regressions.
+
+## Self-improvement policy
+
+The agent cannot freely rewrite its own prompt.
+
+Only known evaluator failure classes can map to reviewed reinforcement templates. Each candidate includes structured evidence such as the source scenario, failure code, expected state, and observed state.
+
+A candidate is kept only when all are true:
+
+- at least one measured scenario improves,
+- overall suite score does not decrease,
+- no previously evaluated scenario regresses.
+
+Otherwise the reinforcement file is rolled back automatically.
 
 ## Tests
 
@@ -59,21 +111,40 @@ The harness:
 pytest -q
 ```
 
-## Safety principles
-
-- The assistant is scheduling-only; it does not diagnose or prescribe.
-- Availability comes from tools, not model memory.
-- State changes are only confirmed after a successful tool response.
-- Cancellation requires explicit intent and appointment identity.
-- Evaluation checks hidden state, not only fluent transcript text.
-- Self-improvement is constrained to allow-listed rule classes rather than arbitrary self-editing.
+The deterministic unit tests do not consume model credits.
 
 ## Repository map
 
 ```text
-app/       agent, provider adapter, prompts, state, tools
-evals/     scenarios, runner, evaluator, improvement logic
-data/      deterministic clinic seed and learned reinforcements
-tests/     tool and agent-loop tests
-DESIGN.md  one-page design note
+app/
+  agent.py          multi-turn orchestration
+  llm.py            provider interface + Gemini adapter
+  guardrails.py     deterministic safety gate
+  prompts.py        base prompt + learned reinforcements
+  state.py          conversation/tool state
+  tools.py          clinic tools + mock data store
+
+evals/
+  scenarios.json    hard-case scenario suite
+  evaluator.py      weighted hidden-state/tool/safety scoring
+  improve.py        structured reinforcement + rollback gate
+  runner.py         scenario execution
+
+data/
+  clinic_seed.json
+  reinforcements.json
+
+tests/
+  deterministic unit/regression tests
+
+reports/
+  latest_eval.json  generated by a real eval run
+
+DESIGN.md
+run_agent.py
+run_eval.py
 ```
+
+## Design note
+
+See [DESIGN.md](DESIGN.md) for the one-page rationale.

@@ -1,8 +1,16 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
 from dotenv import load_dotenv
 
 from evals.evaluator import suite_summary
 from evals.improve import close_improvement_loop
 from evals.runner import run_suite
+
+
+REPORT_PATH = Path("reports/latest_eval.json")
 
 
 def print_results(title, results):
@@ -23,14 +31,31 @@ def print_results(title, results):
     )
 
 
+def write_report(outcome: dict) -> None:
+    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "promoted": outcome["promoted"],
+        "reason": outcome["reason"],
+        "added_count": outcome["added_count"],
+        "candidate_reinforcements": outcome["additions"],
+        "comparison": outcome["comparison"],
+        "before": outcome["before"],
+        "after": outcome["after"],
+    }
+    REPORT_PATH.write_text(json.dumps(payload, indent=2) + "\n")
+
+
 def main():
     load_dotenv()
 
     outcome = close_improvement_loop(run_suite)
+    write_report(outcome)
+
     print_results("BASELINE", outcome["before"])
 
     if not outcome["additions"]:
         print("\nNo allow-listed failure produced a candidate reinforcement.")
+        print(f"Report written to {REPORT_PATH}")
         return
 
     print("\nCandidate reinforcements:")
@@ -63,6 +88,8 @@ def main():
         print("\nPROMOTED: reinforcement kept because it improved the suite with zero regressions.")
     else:
         print(f"\nROLLED BACK: {outcome['reason']}. Reinforcement file restored.")
+
+    print(f"Report written to {REPORT_PATH}")
 
 
 if __name__ == "__main__":
