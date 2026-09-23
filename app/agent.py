@@ -14,11 +14,13 @@ class SchedulingAgent:
         patient_id: str,
         store: ClinicStore | None = None,
         provider: LLMProvider | None = None,
+        max_tool_rounds: int = 6,
     ):
         self.provider = provider or GeminiProvider()
         self.store = store or ClinicStore()
         self.state = ConversationState(patient_id=patient_id)
         self.system_prompt = build_system_prompt()
+        self.max_tool_rounds = max_tool_rounds
 
     def _first_or_continued_user_turn(self, user_text: str) -> ModelTurn:
         if self.state.last_interaction_id:
@@ -34,17 +36,17 @@ class SchedulingAgent:
         )
 
     def send(self, user_text: str) -> str:
-        self.state.transcript.append({"role": "user", "content": user_text})
+        self.state.record_user(user_text)
         turn = self._first_or_continued_user_turn(user_text)
 
-        for _ in range(6):
+        for _ in range(self.max_tool_rounds):
             if not turn.interaction_id:
                 raise RuntimeError("Model provider returned no interaction id")
             self.state.last_interaction_id = turn.interaction_id
 
             if not turn.tool_requests:
                 text = turn.text.strip()
-                self.state.transcript.append({"role": "assistant", "content": text})
+                self.state.record_assistant(text)
                 return text
 
             tool_results = []
@@ -55,13 +57,7 @@ class SchedulingAgent:
                     request.name,
                     request.arguments,
                 )
-                self.state.tool_calls.append(
-                    {
-                        "name": request.name,
-                        "arguments": request.arguments,
-                        "result": result,
-                    }
-                )
+                self.state.record_tool(request.name, request.arguments, result)
                 tool_results.append(
                     {
                         "call_id": request.call_id,
